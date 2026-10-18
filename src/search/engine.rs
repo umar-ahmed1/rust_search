@@ -1,16 +1,15 @@
 use std::collections::HashMap;
-use crate::products::model::Product;
 use crate::indexing::tokenizer::tokenize;
 use crate::indexing::inverted_index::InvertedIndex;
 use crate::search::bm25::{calculate_bm25_idf, calculate_bm25_tf};
 
 #[derive(Debug)]
-pub struct SearchResult<'a> {
-    pub product: &'a Product,
+pub struct SearchResult {
+    pub product_id: i32,
     pub score: f64,
 }
 
-pub fn search_inverted_products<'a>(index: &InvertedIndex, products: &'a [Product], query: &str) -> Vec<SearchResult<'a>> {
+pub fn search_inverted_products(index: &InvertedIndex, query: &str) -> Vec<SearchResult> {
         //normalize the query
         let query_terms = tokenize(query);
     
@@ -43,15 +42,13 @@ pub fn search_inverted_products<'a>(index: &InvertedIndex, products: &'a [Produc
             }
         }
 
-        // now that we have all the product ids and their scores we need to get the corresponding products and create the search results with the scores
+        // now that we have all the product ids and their scores we can return them since we have defined a search result to just be id, score
         for (product_id, score)  in product_id_scores {
-            if let Some(product) = products.iter().find(|p| p.id == product_id) {
-                let search_result = SearchResult {
-                    product,
-                    score,
-                };
-                results.push(search_result);
-            }
+            let search_result = SearchResult {
+                product_id,
+                score,
+            };
+            results.push(search_result);
         }
 
 

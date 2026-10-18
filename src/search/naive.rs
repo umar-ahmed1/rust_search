@@ -2,7 +2,7 @@ use crate::products::model::Product;
 use crate::search::engine::SearchResult;
 
 // rust could be confused if the result is pointing to products or query so use 'a to make it aware
-pub fn search_products<'a>(products: &'a Vec<Product>, query: &str) -> Vec<SearchResult<'a>> {
+pub fn search_products(products: &Vec<Product>, query: &str) -> Vec<SearchResult> {
     //normalize the query
     let lowercase: String = query.to_lowercase();
 
@@ -35,7 +35,7 @@ pub fn search_products<'a>(products: &'a Vec<Product>, query: &str) -> Vec<Searc
         if matches_description { score += 5.0};
 
         let search_result = SearchResult {
-            product, 
+            product_id: product.id, 
             score
         };
 

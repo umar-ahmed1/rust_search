@@ -31,11 +31,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Now build your inverted index from the database or catalog and benchmark!
     let index = build_inverted_index(&catalog);
-    let results = search_inverted_products(&index, &catalog, "wireless keyboard");
+    let results = search_inverted_products(&index, "wireless keyboard");
     println!("Found {} results for search query.", results.len());
 
     // test_db(&pool).await?;
-    // compare();
+    compare();
 
     Ok(())
 }
@@ -134,13 +134,13 @@ fn compare() {
 
         // 2. Benchmark Naive Search (search_products)
         let start_naive: Instant = Instant::now();
-        let naive_results: Vec<SearchResult<'_>> = search_products(&catalog, query);
+        let naive_results: Vec<SearchResult> = search_products(&catalog, query);
         let duration_naive: Duration = start_naive.elapsed();
         println!("Naive search time:      {:?} (Found {} results)", duration_naive, naive_results.len());
 
         // 3. Benchmark Indexed Search (search_inverted_products)
         let start_query: Instant = Instant::now();
-        let indexed_results: Vec<SearchResult<'_>> = search_inverted_products(&index, &catalog, query);
+        let indexed_results: Vec<SearchResult> = search_inverted_products(&index, query);
         let duration_query: Duration = start_query.elapsed();
         println!("Indexed search time:    {:?} (Found {} results)", duration_query, indexed_results.len());
     }
