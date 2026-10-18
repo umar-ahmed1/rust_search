@@ -1,6 +1,6 @@
-use sqlx::{FromRow, PgPool};
+use sqlx::{PgPool};
 use rust_decimal::Decimal;
-use chrono::{DateTime, Utc};
+use chrono::{Utc};
 use crate::products::{Product};
 
 pub fn get_database_url() -> String {
@@ -140,4 +140,35 @@ pub async fn delete_product(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> 
     println!("rows affected by deleting id: {} is {}", id, result.rows_affected());
 
     Ok(result.rows_affected())
+}
+
+use sqlx::QueryBuilder;
+
+// seed a lot of bulk products
+pub async fn seed_products_bulk(pool: &PgPool, products: &[Product]) -> Result<(), sqlx::Error> {
+    if products.is_empty() {
+        return Ok(());
+    }
+
+    // SQLx QueryBuilder lets us dynamically build bulk inserts safely in chunks (e.g., 1,000 at a time)
+    for chunk in products.chunks(1_000) {
+        let mut query_builder: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(
+            "INSERT INTO products (title, description, category, price, in_stock, updated_at) "
+        );
+
+        query_builder.push_values(chunk, |mut b, product| {
+            b.push_bind(&product.title)
+             .push_bind(&product.description)
+             .push_bind(&product.category)
+             .push_bind(product.price)
+             .push_bind(product.in_stock)
+             .push_bind(product.updated_at);
+        });
+
+        let query = query_builder.build();
+        query.execute(pool).await?;
+    }
+
+    println!("Successfully seeded {} products into PostgreSQL!", products.len());
+    Ok(())
 }

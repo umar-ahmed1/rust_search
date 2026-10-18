@@ -46,7 +46,7 @@ through `pgvector`.
     -   `updated_at`
 -   [x] Add a primary key and appropriate field constraints.
 -   [x] Add database indexes for fields used in filtering or sorting.
--   [ ] Create a realistic seed dataset containing thousands of
+-   [x] Create a realistic seed dataset containing thousands of
     products.
 -   [x] Keep the dataset reproducible so benchmarks can be repeated.
 
@@ -54,9 +54,9 @@ through `pgvector`.
 
 -   [x] Learn the basics of `sqlx` and asynchronous database access.
 -   [x] Configure database connections and a connection pool.
--   [ ] Implement product creation, retrieval, updating, and deletion.
--   [ ] Use parameterized queries.
--   [ ] Handle database errors rather than unwrapping every operation.
+-   [x] Implement product creation, retrieval, updating, and deletion.
+-   [x] Use parameterized queries.
+-   [x] Handle database errors rather than unwrapping every operation.
 -   [x] Add database migrations so schema changes are repeatable.
 -   [x] Keep credentials and connection strings in configuration or
     environment variables rather than hardcoding them.

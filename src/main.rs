@@ -15,12 +15,24 @@ use db::{fetch_all_products};
 
 #[tokio::main] // <-- This macro transforms the async main for Rust - native rust doesnt know how to run async and await
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    compare();
-
     // setup the db and query products
     let pool: PgPool = setup_db().await?; // remember the .await? bubbles the error to mains error so we are just left with the good case
 
-    test_db(&pool).await?;
+    println!("Generating 100,000 products in memory...");
+    let catalog = generate_large_catalog(100_000);
+
+    println!("Inserting products into PostgreSQL...");
+    let start = Instant::now();
+    db::seed_products_bulk(&pool, &catalog).await?;
+    println!("Database seeding took: {:?}", start.elapsed());
+
+    // Now build your inverted index from the database or catalog and benchmark!
+    let index = build_inverted_index(&catalog);
+    let results = search_inverted_products(&index, &catalog, "wireless keyboard");
+    println!("Found {} results for search query.", results.len());
+
+    // test_db(&pool).await?;
+    // compare();
 
     Ok(())
 }
@@ -44,7 +56,7 @@ async fn test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
 
     let _ = db::update_product(
         &pool,
-        product_id,
+        1,
         "Wireless Mechanical Keyboard",
         "An upgraded wireless mechanical keyboard with Bluetooth.",
         "Electronics",
@@ -104,8 +116,8 @@ fn generate_large_catalog(size: usize) -> Vec<Product> {
 }
 
 fn compare() {
-    let sizes = [100, 1_000, 10_000, 50_000]; // add 50,000 and 1_000_000 later if needed
-    let query = "jacket";
+    let sizes: [usize; 4] = [100, 1_000, 10_000, 50_000]; // add 50,000 and 1_000_000 later if needed
+    let query: &str = "jacket";
 
     for &size in &sizes {
         println!("\n--- Benchmarking with {} products ---", size);
@@ -119,7 +131,7 @@ fn compare() {
 
         // 2. Benchmark Naive Search (search_products)
         let start_naive: Instant = Instant::now();
-        let naive_results: Vec<SearchResult<'_>> = search_products(&catalog, query); // Using your existing function!
+        let naive_results: Vec<SearchResult<'_>> = search_products(&catalog, query);
         let duration_naive: Duration = start_naive.elapsed();
         println!("Naive search time:      {:?} (Found {} results)", duration_naive, naive_results.len());
 

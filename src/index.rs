@@ -135,12 +135,13 @@ pub fn search_inverted_products<'a>(index: &InvertedIndex, products: &'a [Produc
 
         // now that we have all the product ids and their scores we need to get the corresponding products and create the search results with the scores
         for (product_id, score)  in product_id_scores {
-            let product = &products[(product_id - 1) as usize];
+            if let Some(product) = products.iter().find(|p| p.id == product_id) {
                 let search_result = SearchResult {
                     product,
                     score,
                 };
-            results.push(search_result);
+                results.push(search_result);
+            }
         }
 
 
