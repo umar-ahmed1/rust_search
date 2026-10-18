@@ -91,12 +91,12 @@ Responsibilities:
 
 Tasks:
 
--   [ ] Move product data types into an appropriate module.
--   [ ] Keep database access out of the BM25 scoring implementation.
--   [ ] Keep indexing logic separate from database repository logic.
--   [ ] Make the search engine accept the index and return ranked
+-   [x] Move product data types into an appropriate module.
+-   [x] Keep database access out of the BM25 scoring implementation.
+-   [x] Keep indexing logic separate from database repository logic.
+-   [x] Make the search engine accept the index and return ranked
     product IDs or result references.
--   [ ] Avoid tightly coupling search logic to a particular HTTP
+-   [x] Avoid tightly coupling search logic to a particular HTTP
     framework or database driver.
 
 ## 2.4 --- Design the Database--Index Relationship
@@ -104,14 +104,14 @@ Tasks:
 **PostgreSQL stores canonical product data. The inverted index stores
 the structures needed to find matching product IDs efficiently.**
 
--   [ ] Load product records from PostgreSQL to build the index.
--   [ ] Keep the index in memory initially.
--   [ ] Return ranked product IDs from the search engine.
--   [ ] Fetch the corresponding product details by ID.
+-   [x] Load product records from PostgreSQL to build the index.
+-   [x] Keep the index in memory initially.
+-   [x] Return ranked product IDs from the search engine.
+-   [x] Fetch the corresponding product details by ID.
 -   [ ] Ensure product updates and deletions eventually reach the index.
 -   [ ] Track the index version or generation so you know which data it
     represents.
--   [ ] Avoid querying PostgreSQL separately for every query term.
+-   [x] Avoid querying PostgreSQL separately for every query term.
 -   [ ] Define what happens if a product changes in PostgreSQL while the
     search index is temporarily stale.
 
@@ -255,6 +255,17 @@ The product and score are illustrative.
 -   [ ] Handle graceful shutdown.
 -   [ ] Ensure database connection pools are reused.
 -   [ ] Avoid holding locks across slow I/O operations.
+-   [ ] Add a background index refresh job: on a timer, compare the
+    index generation (product count + max `updated_at`) with
+    PostgreSQL and rebuild when they differ. Starting point:
+    `index_manager::refresh_index_if_stale`.
+-   [ ] Swap a rebuilt index in without blocking searches, skip a tick
+    if a rebuild is still running, and keep serving the old index if
+    PostgreSQL is unavailable.
+-   [ ] Choose and document the refresh interval and the maximum
+    staleness accepted (see `docs/index-consistency.md`).
+-   [ ] Decide how deletions are detected (count comparison, or a
+    soft-delete column the poll can see).
 
 ## 4.3 --- Test the API
 
@@ -323,6 +334,9 @@ engines.
 -   [ ] Add consistency checks against the product database.
 -   [ ] Define how index generations are created, published, and
     retired.
+-   [ ] Replace full rebuilds with incremental updates driven by
+    changed rows (an `updated_at` watermark, an outbox, or CDC), and
+    keep the generation check as a periodic reconciliation job.
 
 **Phase complete when:** startup is faster than a full rebuild, and
 products can be updated while searches continue to work.

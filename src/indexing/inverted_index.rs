@@ -1,6 +1,15 @@
 use std::collections::HashMap;
+use chrono::{DateTime, Utc};
+use sqlx::prelude::FromRow;
+
 use crate::products::model::Product;
 use crate::indexing::tokenizer::tokenize;
+
+#[derive(Debug, PartialEq, FromRow)]
+pub struct IndexGeneration {
+    pub max_updated_at: Option<DateTime<Utc>>,
+    pub product_count: i64
+}
 
 #[derive(Debug)]
 pub struct InvertedIndex {
@@ -11,6 +20,7 @@ pub struct InvertedIndex {
     // fields for bm25 calculation
     pub average_dl: f64,
     pub total_docs: usize,
+    pub index_generation: IndexGeneration
 }
 
 pub fn build_inverted_index(products: &[Product]) -> InvertedIndex {
@@ -49,11 +59,18 @@ pub fn build_inverted_index(products: &[Product]) -> InvertedIndex {
         total_length as f64 / products.len() as f64
     };
 
+    let index_generation = IndexGeneration {
+        max_updated_at: products.iter().map(|product| product.updated_at).max(),
+        product_count: products.len() as i64,
+    };
+
     let index_struct = InvertedIndex {
         postings: inverted_index,
         doc_lengths,
         average_dl: average_dl,
-        total_docs: products.len()
+        total_docs: products.len(),
+        index_generation
     };
+
     index_struct
 }

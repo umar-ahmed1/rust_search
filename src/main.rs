@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod index_manager;
 mod indexing;
 mod products;
 mod search;
@@ -10,7 +11,7 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 
 use crate::db::setup_db;
-use crate::indexing::inverted_index::{build_inverted_index, InvertedIndex};
+use crate::indexing::inverted_index::{build_inverted_index, InvertedIndex, IndexGeneration};
 use crate::products::model::Product;
 use crate::products::repository::{self};
 use crate::search::engine::{search_inverted_products, SearchResult};
@@ -72,6 +73,9 @@ async fn inverted_flow(pool: &PgPool) -> Result<(), sqlx::Error> {
     let duration_build: Duration = start_build.elapsed();
     println!("Index build time:       {:?}", duration_build);
 
+    // 2. Make sure the index still matches PostgreSQL (rebuilds it if the database changed)
+    let index: InvertedIndex = index_manager::refresh_index_if_stale(pool, index).await?;
+
     // 3. Benchmark Indexed Search (search_inverted_products)
     let start_query: Instant = Instant::now();
     let indexed_results: Vec<SearchResult> = search_inverted_products(&index, query);
@@ -86,7 +90,7 @@ async fn inverted_flow(pool: &PgPool) -> Result<(), sqlx::Error> {
     let ids: Vec<i32> = top.iter().map(|result| result.product_id).collect();
     let products: Vec<Product> = repository::get_products_by_ids(pool, &ids).await?;
     let duration_get: Duration = start_get.elapsed();
-    println!("Indexed get time:       {:?} (Fetched {} products)", duration_get, products.len());
+    println!("Indexed get time:       {:?} (Fetched {} products index products count {} index updated at {:?})", duration_get, products.len(), &index.index_generation.product_count, index.index_generation.max_updated_at);
 
     // 6. product id -> product map, so we can restore the ranked order
     let mut products_map: HashMap<i32, Product> = HashMap::with_capacity(products.len());
@@ -94,7 +98,7 @@ async fn inverted_flow(pool: &PgPool) -> Result<(), sqlx::Error> {
         products_map.insert(product.id, product);
     }
 
-    // 7. Walk the ranked results - order and score come from the search, title comes from the map
+    // 7. print the results
     println!("\nTop results for \"{}\":", query);
     let mut missing: usize = 0;
     for (rank, result) in top.iter().enumerate() {

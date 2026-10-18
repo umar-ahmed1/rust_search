@@ -1,7 +1,7 @@
 use sqlx::{PgPool, QueryBuilder};
 use rust_decimal::Decimal;
 use chrono::Utc;
-use crate::products::model::Product;
+use crate::{indexing::inverted_index::IndexGeneration, products::model::Product};
 
 // we pass in a reference to the pool here so multiple queries can use the pool at the same time
 // remember that one mutable reference or multiple immutable references
@@ -161,4 +161,13 @@ pub async fn truncate_products(pool: &PgPool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
     Ok(())
+}
+
+// get the current db max updated at and current db products count so we can compare with what the index had and see stale it is
+pub async fn get_index_staleness(pool: &PgPool) -> Result<IndexGeneration, sqlx::Error> {
+    let result: IndexGeneration = sqlx::query_as::<_, IndexGeneration>("SELECT COUNT(*) AS product_count, MAX(updated_at) AS max_updated_at FROM products")
+    .fetch_one(pool)
+    .await?;
+
+    Ok(result)
 }
