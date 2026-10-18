@@ -16,7 +16,7 @@ pub async fn fetch_all_products(pool: &PgPool) -> Result<Vec<Product>, sqlx::Err
 }
 
 // fetch a single product (returns None if it doesn't exist) since fetch_optional cud return null
-pub async fn get_product_by_id(pool: &PgPool, id: i32) -> Result<Option<Product>, sqlx:: Error> {
+pub async fn get_product_by_id(pool: &PgPool, id: i32) -> Result<Option<Product>, sqlx::Error> {
     // option returns some or none if the product exists or not
     let product: Option<Product> = sqlx::query_as::<_, Product>(
         "SELECT id, title, description, category, price, in_stock, updated_at FROM products WHERE id = $1"
@@ -36,6 +36,18 @@ pub async fn get_product_by_id(pool: &PgPool, id: i32) -> Result<Option<Product>
     }
 
     Ok(product)
+}
+
+pub async fn get_products_by_ids(pool: &PgPool, ids: &[i32]) -> Result<Vec<Product>, sqlx::Error> {
+    // the type in query_as is of type 1 row so we don't do vec
+    let products: Vec<Product> = sqlx::query_as::<_, Product>(
+        "SELECT id, title, description, category, price, in_stock, updated_at FROM products WHERE id = ANY($1)"
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(products)
 }
 
 pub async fn create_product(
@@ -139,5 +151,14 @@ pub async fn seed_products_bulk(pool: &PgPool, products: &[Product]) -> Result<(
     }
 
     println!("Successfully seeded {} products into PostgreSQL!", products.len());
+    Ok(())
+}
+
+
+/// delete every product and reset the id counter so the next insert gets id 1
+pub async fn truncate_products(pool: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("TRUNCATE TABLE products RESTART IDENTITY")
+        .execute(pool)
+        .await?;
     Ok(())
 }

@@ -3,16 +3,16 @@ mod db;
 mod indexing;
 mod products;
 mod search;
+mod seed;
 
-use chrono::Utc;
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
 
 use crate::db::setup_db;
 use crate::indexing::inverted_index::{build_inverted_index, InvertedIndex};
 use crate::products::model::Product;
-use crate::products::repository::{self, fetch_all_products};
+use crate::products::repository::{self};
 use crate::search::engine::{search_inverted_products, SearchResult};
 use crate::search::naive::search_products;
 
@@ -21,127 +21,91 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // setup the db and query products
     let pool: PgPool = setup_db().await?; // remember the .await? bubbles the error to mains error so we are just left with the good case
 
-    println!("Generating 100,000 products in memory...");
-    let catalog = generate_large_catalog(100_000);
-
-    println!("Inserting products into PostgreSQL...");
-    let start = Instant::now();
-    repository::seed_products_bulk(&pool, &catalog).await?;
-    println!("Database seeding took: {:?}", start.elapsed());
-
-    // Now build your inverted index from the database or catalog and benchmark!
-    let index = build_inverted_index(&catalog);
-    let results = search_inverted_products(&index, "wireless keyboard");
-    println!("Found {} results for search query.", results.len());
-
-    // test_db(&pool).await?;
-    compare();
-
-    Ok(())
-}
-
-async fn test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
-    let _: Vec<Product> = fetch_all_products(&pool).await?;
-
-    let _ = repository::create_product(
-        &pool,
-        "Mechanical Keyboard",
-        "A tactile and responsive mechanical keyboard.",
-        "Electronics",
-        Decimal::new(12999, 2),
-        true,
-    )
-    .await?;
-
-    let product_id: i32 = 5;
-
-    let _ = repository::get_product_by_id(&pool, product_id).await?;
-
-    let _ = repository::update_product(
-        &pool,
-        1,
-        "Wireless Mechanical Keyboard",
-        "An upgraded wireless mechanical keyboard with Bluetooth.",
-        "Electronics",
-        Decimal::new(14999, 2), // Represents 149.99
-        true,
-    )
-    .await?;
-
-    let _ = repository::delete_product(&pool, product_id).await?;
-
-    let _ = repository::get_product_by_id(&pool, product_id).await?;
-
-    Ok(())
-}
-
-fn generate_large_catalog(size: usize) -> Vec<Product> {
-    let mut products = Vec::with_capacity(size);
-
-    let adjectives: [&str; 15] = [
-        "wireless", "ergonomic", "portable", "durable", "lightweight",
-        "mechanical", "waterproof", "insulated", "smart", "adjustable",
-        "reusable", "compact", "premium", "heavy", "smooth"
-    ];
-
-    let nouns: [&str; 15] = [
-        "keyboard", "mouse", "headphones", "backpack", "bottle",
-        "jacket", "shoes", "tent", "lamp", "processor",
-        "desk", "coffee", "maker", "t-shirt", "watch"
-    ];
-
-    let contexts: [&str; 5] = [
-        "designed for gaming and office productivity.",
-        "great for hiking, camping, and outdoor adventures.",
-        "perfect for everyday use, studying, and travel.",
-        "engineered for high performance and long-lasting comfort.",
-        "keeps drinks cold and weather out during winter trails."
-    ];
-
-    for i in 1..=size {
-        // Cycle through our arrays to mix and match words uniquely
-        let adj: &str = adjectives[i % adjectives.len()];
-        let noun: &str = nouns[(i / adjectives.len()) % nouns.len()];
-        let context: &str = contexts[i % contexts.len()];
-
-        products.push(Product {
-            id: i as i32,
-            title: format!("{} {} #{}", adj, noun, i),
-            description: format!("A reliable product made with quality materials. It is {} {}", adj, context),
-            category: "abc".to_string(),
-            price: Decimal::new(5, 1),
-            in_stock: true,
-            updated_at: Utc::now(),
-        });
+    // `cargo run -- seed` wipes the table and reloads the deterministic catalog, then exits
+    if std::env::args().nth(1).as_deref() == Some("seed") {
+        seed::reset_and_seed(&pool, seed::CATALOG_SIZE).await?;
+        return Ok(());
     }
 
-    products
+    compare(&pool).await?;
+    inverted_flow(&pool).await?;
+
+    Ok(())
 }
 
-fn compare() {
-    let sizes: [usize; 4] = [100, 1_000, 10_000, 50_000]; // add 50,000 and 1_000_000 later if needed
+async fn compare(pool: &PgPool) -> Result<(), sqlx::Error> {
     let query: &str = "jacket";
 
-    for &size in &sizes {
-        println!("\n--- Benchmarking with {} products ---", size);
-        let catalog = generate_large_catalog(size);
+    println!("\n--- Benchmarking products ---");
+    let catalog = repository::fetch_all_products(pool).await?;
 
-        // 1. Benchmark Index Build Time
-        let start_build: Instant = Instant::now();
-        let index: InvertedIndex = build_inverted_index(&catalog);
-        let duration_build: Duration = start_build.elapsed();
-        println!("Index build time:       {:?}", duration_build);
+    // 1. Benchmark Index Build Time
+    let start_build: Instant = Instant::now();
+    let index: InvertedIndex = build_inverted_index(&catalog);
+    let duration_build: Duration = start_build.elapsed();
+    println!("Index build time:       {:?}", duration_build);
 
-        // 2. Benchmark Naive Search (search_products)
-        let start_naive: Instant = Instant::now();
-        let naive_results: Vec<SearchResult> = search_products(&catalog, query);
-        let duration_naive: Duration = start_naive.elapsed();
-        println!("Naive search time:      {:?} (Found {} results)", duration_naive, naive_results.len());
+    // 2. Benchmark Naive Search (search_products)
+    let start_naive: Instant = Instant::now();
+    let naive_results: Vec<SearchResult> = search_products(&catalog, query);
+    let duration_naive: Duration = start_naive.elapsed();
+    println!("Naive search time:      {:?} (Found {} results)", duration_naive, naive_results.len());
 
-        // 3. Benchmark Indexed Search (search_inverted_products)
-        let start_query: Instant = Instant::now();
-        let indexed_results: Vec<SearchResult> = search_inverted_products(&index, query);
-        let duration_query: Duration = start_query.elapsed();
-        println!("Indexed search time:    {:?} (Found {} results)", duration_query, indexed_results.len());
+    // 3. Benchmark Indexed Search (search_inverted_products)
+    let start_query: Instant = Instant::now();
+    let indexed_results: Vec<SearchResult> = search_inverted_products(&index, query);
+    let duration_query: Duration = start_query.elapsed();
+    println!("Indexed search time:    {:?} (Found {} results)", duration_query, indexed_results.len());
+    
+    Ok(())
+}
+
+async fn inverted_flow(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let query: &str = "shoes";
+
+    println!("\n--- Benchmarking actual flow ---");
+    let catalog = repository::fetch_all_products(pool).await?;
+
+    // 1. Benchmark Index Build Time
+    let start_build: Instant = Instant::now();
+    let index: InvertedIndex = build_inverted_index(&catalog);
+    let duration_build: Duration = start_build.elapsed();
+    println!("Index build time:       {:?}", duration_build);
+
+    // 3. Benchmark Indexed Search (search_inverted_products)
+    let start_query: Instant = Instant::now();
+    let indexed_results: Vec<SearchResult> = search_inverted_products(&index, query);
+    let duration_query: Duration = start_query.elapsed();
+    println!("Indexed search time:    {:?} (Found {} results)", duration_query, indexed_results.len());
+
+    // 4. Take the top 10 ranked results (slice is safe even if there are fewer than 10 matches)
+    let top: &[SearchResult] = &indexed_results[..indexed_results.len().min(10)];
+
+    // 5. Fetch just those products from PostgreSQL (one query, arbitrary row order)
+    let start_get: Instant = Instant::now();
+    let ids: Vec<i32> = top.iter().map(|result| result.product_id).collect();
+    let products: Vec<Product> = repository::get_products_by_ids(pool, &ids).await?;
+    let duration_get: Duration = start_get.elapsed();
+    println!("Indexed get time:       {:?} (Fetched {} products)", duration_get, products.len());
+
+    // 6. product id -> product map, so we can restore the ranked order
+    let mut products_map: HashMap<i32, Product> = HashMap::with_capacity(products.len());
+    for product in products {
+        products_map.insert(product.id, product);
     }
+
+    // 7. Walk the ranked results - order and score come from the search, title comes from the map
+    println!("\nTop results for \"{}\":", query);
+    let mut missing: usize = 0;
+    for (rank, result) in top.iter().enumerate() {
+        match products_map.get(&result.product_id) {
+            Some(product) => println!("{}. {} score {}", rank + 1, product.title, result.score),
+            None => missing += 1,
+        }
+    }
+    if missing > 0 {
+        println!("({} ranked product(s) no longer exist in PostgreSQL, skipped)", missing);
+    }
+
+    Ok(())
 }
