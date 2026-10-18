@@ -1,23 +1,5 @@
-use sqlx::{FromRow};
-use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
-
-#[derive(Debug, Clone, FromRow, serde::Serialize, serde::Deserialize)]
-pub struct Product {
-    pub id: i32,
-    pub title: String,
-    pub description: String,
-    pub category: String,
-    pub price: Decimal,
-    pub in_stock: bool,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug)]
-pub struct SearchResult<'a> {
-    pub product: &'a Product,
-    pub score: f64,
-}
+use crate::products::model::Product;
+use crate::search::engine::SearchResult;
 
 // rust could be confused if the result is pointing to products or query so use 'a to make it aware
 pub fn search_products<'a>(products: &'a Vec<Product>, query: &str) -> Vec<SearchResult<'a>> {

@@ -1,17 +1,20 @@
-mod products;
-mod index;
+mod config;
 mod db;
+mod indexing;
+mod products;
+mod search;
 
-use chrono::{Utc};
-use products::{search_products};
-use index::build_inverted_index;
+use chrono::Utc;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use std::time::{Duration, Instant};
+
 use crate::db::setup_db;
-use crate::products::{Product, SearchResult};
-use crate::index::{InvertedIndex, search_inverted_products};
-use std::time::{Duration,Instant};
-use db::{fetch_all_products};
+use crate::indexing::inverted_index::{build_inverted_index, InvertedIndex};
+use crate::products::model::Product;
+use crate::products::repository::{self, fetch_all_products};
+use crate::search::engine::{search_inverted_products, SearchResult};
+use crate::search::naive::search_products;
 
 #[tokio::main] // <-- This macro transforms the async main for Rust - native rust doesnt know how to run async and await
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Inserting products into PostgreSQL...");
     let start = Instant::now();
-    db::seed_products_bulk(&pool, &catalog).await?;
+    repository::seed_products_bulk(&pool, &catalog).await?;
     println!("Database seeding took: {:?}", start.elapsed());
 
     // Now build your inverted index from the database or catalog and benchmark!
@@ -40,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
     let _: Vec<Product> = fetch_all_products(&pool).await?;
 
-    let _ = db::create_product(
+    let _ = repository::create_product(
         &pool,
         "Mechanical Keyboard",
         "A tactile and responsive mechanical keyboard.",
@@ -52,9 +55,9 @@ async fn test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
 
     let product_id: i32 = 5;
 
-    let _ = db::get_product_by_id(&pool, product_id).await?;
+    let _ = repository::get_product_by_id(&pool, product_id).await?;
 
-    let _ = db::update_product(
+    let _ = repository::update_product(
         &pool,
         1,
         "Wireless Mechanical Keyboard",
@@ -65,9 +68,9 @@ async fn test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
     )
     .await?;
 
-    let _ = db::delete_product(&pool, product_id).await?;
+    let _ = repository::delete_product(&pool, product_id).await?;
 
-    let _ = db::get_product_by_id(&pool, product_id).await?;
+    let _ = repository::get_product_by_id(&pool, product_id).await?;
 
     Ok(())
 }
