@@ -1,0 +1,143 @@
+use sqlx::{FromRow, PgPool};
+use rust_decimal::Decimal;
+use chrono::{DateTime, Utc};
+use crate::products::{Product};
+
+pub fn get_database_url() -> String {
+    dotenvy::dotenv().ok();
+
+    // Pull the DATABASE_URL variable we set in .env
+    let database_url: String = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set in the .env file");
+
+    database_url
+}
+
+pub async fn establish_connection(url: &str) -> Result<PgPool, sqlx::Error> {
+    // a connection pool is a "pool" of active db connections postgres creates
+    // at query time postgres borrows a connection from the pool, runs the query, and returns the connection back to the pool
+    let result: Result<PgPool, sqlx::Error> = PgPool::connect(url).await;
+    result
+}
+
+// we do a box error here cuz pool can return sqlx::error and the migrate can run sqlx::migrate::migrateerror 
+// so box catches all errors
+pub async fn setup_db() -> Result<PgPool, Box<dyn std::error::Error>> {
+    let url: String = get_database_url();
+    let pool = establish_connection(&url).await?;
+
+    // run any pending db migrations if needed
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
+    Ok(pool)
+}
+
+// we pass in a reference to the pool here so multiple queries can use the pool at the same time
+// remember that one mutable reference or multiple immutable references
+pub async fn fetch_all_products(pool: &PgPool) -> Result<Vec<Product>, sqlx::Error> {
+    let products = sqlx::query_as::<_, Product>(
+        "select * from products",
+        ).fetch_all(pool).await?;
+
+    println!("products is {:?}", products);
+
+    Ok(products)
+}
+
+// fetch a single product (returns None if it doesn't exist) since fetch_optional cud return null
+pub async fn get_product_by_id(pool: &PgPool, id: i32) -> Result<Option<Product>, sqlx:: Error> {
+    // option returns some or none if the product exists or not
+    let product: Option<Product> = sqlx::query_as::<_, Product>(
+        "SELECT id, title, description, category, price, in_stock, updated_at FROM products WHERE id = $1"
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+
+    // only borrow here so we can still return the product - otherwise rust gets mad
+    match &product {
+        Some(p) => {
+            println!("get product by id got a product: {:?}", p)
+        }
+        None => {
+            println!("get product by id found no product with id: {}", id)
+        }
+    }
+
+    Ok(product)
+}
+
+pub async fn create_product(
+    pool: &PgPool,
+    title: &str,
+    description: &str,
+    category: &str,
+    price: Decimal,
+    in_stock: bool,
+) -> Result<Product, sqlx::Error> {
+
+    // query_as! checks postgres to get type whenever you build the project, query_as does it at runtime
+    // technically query_as! is better cuz it prevents sql typo and stuff but we just use query_as here
+    let product: Product = sqlx::query_as::<_, Product>(
+        r#"INSERT INTO products (title, description, category, price, in_stock, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, title, description, category, price, in_stock, updated_at"#
+    )
+    .bind(title)
+    .bind(description)
+    .bind(category)
+    .bind(price)
+    .bind(in_stock)
+    .bind(Utc::now())
+    .fetch_one(pool)
+    .await?;
+
+    println!("Successfully created product: {}", product.title);
+
+    Ok(product)
+}
+
+/// 4. UPDATE: Modify an existing product by ID and return the updated record
+pub async fn update_product(
+    pool: &PgPool,
+    id: i32,
+    title: &str,
+    description: &str,
+    category: &str,
+    price: Decimal,
+    in_stock: bool,
+) -> Result<Product, sqlx::Error> {
+    let product = sqlx::query_as::<_, Product>(
+        r#"
+        UPDATE products 
+        SET title = $1, description = $2, category = $3, price = $4, in_stock = $5, updated_at = $6
+        WHERE id = $7
+        RETURNING id, title, description, category, price, in_stock, updated_at
+        "#
+    )
+    .bind(title)
+    .bind(description)
+    .bind(category)
+    .bind(price)
+    .bind(in_stock)
+    .bind(Utc::now())
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
+
+    println!("Successfully updated product: {}", product.title);
+
+    Ok(product)
+}
+
+/// remove a product by ID, returns the number of rows deleted (0 or 1)
+pub async fn delete_product(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM products WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    println!("rows affected by deleting id: {} is {}", id, result.rows_affected());
+
+    Ok(result.rows_affected())
+}

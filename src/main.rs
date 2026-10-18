@@ -1,56 +1,81 @@
 mod products;
 mod index;
+mod db;
 
-use products::{sample_products, search_products};
+use chrono::{Utc};
+use products::{search_products};
 use index::build_inverted_index;
+use rust_decimal::Decimal;
+use sqlx::PgPool;
+use crate::db::setup_db;
 use crate::products::{Product, SearchResult};
-use crate::index::{search_inverted_products};
-use std::time::Instant;
+use crate::index::{InvertedIndex, search_inverted_products};
+use std::time::{Duration,Instant};
+use db::{fetch_all_products};
 
-fn main() {
-    println!("Hello, world!");
-    let products: Vec<Product> = sample_products();
-
-    let query: &str = "gaming";
-    // results is now borrowing products using the reference (since searchresult contains &product) so we cant modify products until results is done using it
-    let results: Vec<SearchResult> = search_products(&products, query);
-
-    println!("Found {} matches for '{}':", results.len(), query);
-
-    for search_result in results {
-        println!("{:?}", search_result);
-    }
-
-    let index = build_inverted_index(&products);
-    println!("index is {:?}", index);
-
-    let inverted_results = search_inverted_products(&index, &products, query);
-
-    println!("Found {} matches for '{}':", inverted_results.len(), query);
-
-    for search_result in inverted_results {
-        println!("inverted {:?}", search_result);
-    }
-
+#[tokio::main] // <-- This macro transforms the async main for Rust - native rust doesnt know how to run async and await
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     compare();
+
+    // setup the db and query products
+    let pool: PgPool = setup_db().await?; // remember the .await? bubbles the error to mains error so we are just left with the good case
+
+    test_db(&pool).await?;
+
+    Ok(())
+}
+
+async fn test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let _: Vec<Product> = fetch_all_products(&pool).await?;
+
+    let _ = db::create_product(
+        &pool,
+        "Mechanical Keyboard",
+        "A tactile and responsive mechanical keyboard.",
+        "Electronics",
+        Decimal::new(12999, 2),
+        true,
+    )
+    .await?;
+
+    let product_id: i32 = 5;
+
+    let _ = db::get_product_by_id(&pool, product_id).await?;
+
+    let _ = db::update_product(
+        &pool,
+        product_id,
+        "Wireless Mechanical Keyboard",
+        "An upgraded wireless mechanical keyboard with Bluetooth.",
+        "Electronics",
+        Decimal::new(14999, 2), // Represents 149.99
+        true,
+    )
+    .await?;
+
+    let _ = db::delete_product(&pool, product_id).await?;
+
+    let _ = db::get_product_by_id(&pool, product_id).await?;
+
+    Ok(())
 }
 
 fn generate_large_catalog(size: usize) -> Vec<Product> {
     let mut products = Vec::with_capacity(size);
 
-    let adjectives = [
+    let adjectives: [&str; 15] = [
         "wireless", "ergonomic", "portable", "durable", "lightweight",
         "mechanical", "waterproof", "insulated", "smart", "adjustable",
         "reusable", "compact", "premium", "heavy", "smooth"
     ];
 
-    let nouns = [
+    let nouns: [&str; 15] = [
         "keyboard", "mouse", "headphones", "backpack", "bottle",
         "jacket", "shoes", "tent", "lamp", "processor",
         "desk", "coffee", "maker", "t-shirt", "watch"
     ];
 
-    let contexts = [
+    let contexts: [&str; 5] = [
         "designed for gaming and office productivity.",
         "great for hiking, camping, and outdoor adventures.",
         "perfect for everyday use, studying, and travel.",
@@ -60,15 +85,18 @@ fn generate_large_catalog(size: usize) -> Vec<Product> {
 
     for i in 1..=size {
         // Cycle through our arrays to mix and match words uniquely
-        let adj = adjectives[i % adjectives.len()];
-        let noun = nouns[(i / adjectives.len()) % nouns.len()];
-        let context = contexts[i % contexts.len()];
+        let adj: &str = adjectives[i % adjectives.len()];
+        let noun: &str = nouns[(i / adjectives.len()) % nouns.len()];
+        let context: &str = contexts[i % contexts.len()];
 
         products.push(Product {
             id: i as i32,
             title: format!("{} {} #{}", adj, noun, i),
             description: format!("A reliable product made with quality materials. It is {} {}", adj, context),
-            category: "abc".to_string()
+            category: "abc".to_string(),
+            price: Decimal::new(5, 1),
+            in_stock: true,
+            updated_at: Utc::now(),
         });
     }
 
@@ -76,7 +104,7 @@ fn generate_large_catalog(size: usize) -> Vec<Product> {
 }
 
 fn compare() {
-    let sizes = [100, 1_000, 10_000, 50_000, 1_000_000];
+    let sizes = [100, 1_000, 10_000, 50_000]; // add 50,000 and 1_000_000 later if needed
     let query = "jacket";
 
     for &size in &sizes {
@@ -84,21 +112,21 @@ fn compare() {
         let catalog = generate_large_catalog(size);
 
         // 1. Benchmark Index Build Time
-        let start_build = Instant::now();
-        let index = build_inverted_index(&catalog);
-        let duration_build = start_build.elapsed();
+        let start_build: Instant = Instant::now();
+        let index: InvertedIndex = build_inverted_index(&catalog);
+        let duration_build: Duration = start_build.elapsed();
         println!("Index build time:       {:?}", duration_build);
 
         // 2. Benchmark Naive Search (search_products)
-        let start_naive = Instant::now();
-        let naive_results = search_products(&catalog, query); // Using your existing function!
-        let duration_naive = start_naive.elapsed();
+        let start_naive: Instant = Instant::now();
+        let naive_results: Vec<SearchResult<'_>> = search_products(&catalog, query); // Using your existing function!
+        let duration_naive: Duration = start_naive.elapsed();
         println!("Naive search time:      {:?} (Found {} results)", duration_naive, naive_results.len());
 
         // 3. Benchmark Indexed Search (search_inverted_products)
-        let start_query = Instant::now();
-        let indexed_results = search_inverted_products(&index, &catalog, query);
-        let duration_query = start_query.elapsed();
+        let start_query: Instant = Instant::now();
+        let indexed_results: Vec<SearchResult<'_>> = search_inverted_products(&index, &catalog, query);
+        let duration_query: Duration = start_query.elapsed();
         println!("Indexed search time:    {:?} (Found {} results)", duration_query, indexed_results.len());
     }
 }

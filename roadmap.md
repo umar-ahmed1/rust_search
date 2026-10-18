@@ -24,45 +24,6 @@ measurements to guide optimization.
 
 ------------------------------------------------------------------------
 
-# Phase 1 --- Finish and Harden the BM25 Engine
-
-**Goal:** make the existing engine testable and measurable before
-changing its architecture.
-
-The tokenizer, inverted index, and BM25 implementation already exist.
-This phase covers the remaining work, excluding the correctness fixes
-and ranking improvements already completed.
-
-## 1.2 --- Add Automated Tests
-
--   [ ] Test the BM25 IDF formula.
--   [ ] Test the BM25 term-frequency component.
--   [ ] Verify how repeated terms affect scores.
--   [ ] Test documents of different lengths.
--   [ ] Test empty queries.
--   [ ] Test queries containing terms that do not appear in the index.
--   [ ] Test that returned results refer to the correct products.
--   [ ] Add integration tests that build an index and search it
-    end-to-end.
--   [ ] Add tests for ties and deterministic result ordering.
-
-## 1.4 --- Establish a Performance Baseline
-
--   [ ] Benchmark using `cargo run --release` or a dedicated benchmark
-    harness.
--   [ ] Separate index-build time from query latency.
--   [ ] Benchmark queries that return few results, many results, and
-    zero results.
--   [ ] Record dataset size, query, number of results, and latency.
--   [ ] Save baseline results so later optimizations can be compared
-    against them.
--   [ ] Ensure comparisons use the same dataset and query workload.
-
-**Phase complete when:** automated tests pass and you have repeatable
-performance measurements for the current engine.
-
-------------------------------------------------------------------------
-
 # Phase 2 --- Replace Hardcoded Products with a Database
 
 **Goal:** use PostgreSQL as the source of truth for product data while
@@ -74,8 +35,8 @@ through `pgvector`.
 
 ## 2.1 --- Set Up PostgreSQL
 
--   [ ] Run PostgreSQL locally, preferably using Docker.
--   [ ] Create a `products` table with fields such as:
+-   [x] Run PostgreSQL locally, preferably using Docker.
+-   [x] Create a `products` table with fields such as:
     -   `id`
     -   `title`
     -   `description`
@@ -83,21 +44,21 @@ through `pgvector`.
     -   `price`
     -   `in_stock`
     -   `updated_at`
--   [ ] Add a primary key and appropriate field constraints.
--   [ ] Add database indexes for fields used in filtering or sorting.
+-   [x] Add a primary key and appropriate field constraints.
+-   [x] Add database indexes for fields used in filtering or sorting.
 -   [ ] Create a realistic seed dataset containing thousands of
     products.
--   [ ] Keep the dataset reproducible so benchmarks can be repeated.
+-   [x] Keep the dataset reproducible so benchmarks can be repeated.
 
 ## 2.2 --- Connect from Rust
 
--   [ ] Learn the basics of `sqlx` and asynchronous database access.
--   [ ] Configure database connections and a connection pool.
+-   [x] Learn the basics of `sqlx` and asynchronous database access.
+-   [x] Configure database connections and a connection pool.
 -   [ ] Implement product creation, retrieval, updating, and deletion.
 -   [ ] Use parameterized queries.
 -   [ ] Handle database errors rather than unwrapping every operation.
--   [ ] Add database migrations so schema changes are repeatable.
--   [ ] Keep credentials and connection strings in configuration or
+-   [x] Add database migrations so schema changes are repeatable.
+-   [x] Keep credentials and connection strings in configuration or
     environment variables rather than hardcoding them.
 
 ## 2.3 --- Separate Application Layers
